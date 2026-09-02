@@ -3,34 +3,29 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Article extends Model
 {
-    use HasFactory;
-
-    protected $table = 'Articles';
+    protected $table = 'articles';
 
     protected $fillable = [
         'title',
         'slug',
-        'categoryId',
-        'authorId',
-        'eventId',
+        'category_id',
+        'author_id',
+        'event_id',
         'summary',
         'content',
-        'image',
+        'featured_image',
         'status',
-        'isAiGenerated',
-        'viewsCount',
-        'likesCount',
-        'sharesCount',
-        'scheduledAt',
-        'createdAt',
-        'updatedAt'
+        'is_ai_generated',
+        'ai_prompt',
+        'views_count',
+        'likes_count',
+        'shares_count',
+        'published_at',
+        'scheduled_at'
     ];
-
-    public $timestamps = false;
 
     // Normalization Accessors (Zero Redundancy in DB)
     public function getCategoryNameAttribute()
@@ -47,12 +42,14 @@ class Article extends Model
     {
         $map = [
             'draft' => 'Bản Nháp',
+            'pending' => 'Chờ Duyệt',
             'pending_review' => 'Chờ Duyệt',
             'approved' => 'Đã Duyệt',
             'published' => 'Đã Xuất Bản',
             'scheduled' => 'Đã Lên Lịch',
             'rejected' => 'Từ Chối',
-            'archived' => 'Lưu Trữ'
+            'archived' => 'Lưu Trữ',
+            'hidden' => 'Ẩn'
         ];
         return $map[$this->status] ?? 'Đã Xuất Bản';
     }
@@ -60,26 +57,26 @@ class Article extends Model
     // Relationships
     public function category()
     {
-        return $this->belongsTo(Category::class, 'categoryId', 'id');
+        return $this->belongsTo(Category::class, 'category_id', 'id');
     }
 
     public function author()
     {
-        return $this->belongsTo(User::class, 'authorId', 'id');
+        return $this->belongsTo(User::class, 'author_id', 'id');
     }
 
     public function event()
     {
-        return $this->belongsTo(Event::class, 'eventId', 'id');
+        return $this->belongsTo(Event::class, 'event_id', 'id');
     }
 
     public function versions()
     {
-        return $this->hasMany(ArticleVersion::class, 'articleId', 'id')->orderBy('versionNumber', 'desc');
+        return $this->hasMany(ArticleVersion::class, 'article_id', 'id')->orderBy('version_number', 'desc');
     }
 
     public function comments()
     {
-        return $this->hasMany(Comment::class, 'articleId', 'id')->orderBy('createdAt', 'desc');
+        return $this->hasMany(Comment::class, 'article_id', 'id')->orderBy('created_at', 'desc');
     }
 }

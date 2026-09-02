@@ -6,12 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 
 class Category extends Model
 {
-    protected $table = 'Categories';
-    protected $fillable = ['name', 'slug', 'description', 'createdAt'];
-    public $timestamps = false;
+    protected $table = 'categories';
+
+    protected $fillable = ['name', 'slug', 'description'];
 
     public function articles()
     {
-        return $this->hasMany(Article::class, 'categoryId', 'id');
+        return $this->hasMany(Article::class, 'category_id', 'id');
     }
 }

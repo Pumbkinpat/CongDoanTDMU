@@ -12,14 +12,15 @@ return new class extends Migration {
             $table->string('slug')->unique();
             $table->foreignId('category_id')->constrained('categories')->onDelete('cascade');
             $table->foreignId('author_id')->constrained('users')->onDelete('cascade');
-            $table->text('summary')->nullable(); // Tóm tắt 50 từ (AI hoặc người nhập)
+            $table->text('summary')->nullable();
             $table->longText('content');
             $table->string('featured_image')->nullable();
-            $table->enum('status', ['draft', 'pending', 'approved', 'published', 'hidden'])->default('draft');
+            $table->string('status')->default('draft');
             $table->boolean('is_ai_generated')->default(false);
             $table->text('ai_prompt')->nullable();
             $table->unsignedBigInteger('views_count')->default(0);
             $table->unsignedBigInteger('likes_count')->default(0);
+            $table->unsignedBigInteger('shares_count')->default(0);
             $table->timestamp('published_at')->nullable();
             $table->timestamp('scheduled_at')->nullable();
             $table->timestamps();

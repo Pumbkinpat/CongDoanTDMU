@@ -6,31 +6,28 @@ use Illuminate\Database\Eloquent\Model;
 
 class ArticleVersion extends Model
 {
-    protected $table = 'ArticleVersions';
+    protected $table = 'article_versions';
 
     protected $fillable = [
-        'articleId',
-        'versionNumber',
+        'article_id',
+        'version_number',
         'title',
         'content',
-        'createdBy',
-        'changeType',
-        'isAiGenerated',
-        'aiProvider',
-        'aiModel',
-        'aiPrompt',
-        'createdAt'
+        'created_by',
+        'change_type',
+        'is_ai_generated',
+        'ai_provider',
+        'ai_model',
+        'ai_prompt'
     ];
-
-    public $timestamps = false;
 
     public function article()
     {
-        return $this->belongsTo(Article::class, 'articleId', 'id');
+        return $this->belongsTo(Article::class, 'article_id', 'id');
     }
 
     public function creator()
     {
-        return $this->belongsTo(User::class, 'createdBy', 'id');
+        return $this->belongsTo(User::class, 'created_by', 'id');
     }
 }

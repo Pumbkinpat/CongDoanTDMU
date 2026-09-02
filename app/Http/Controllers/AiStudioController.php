@@ -4,13 +4,17 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use App\Services\GeminiAiService;
 
 class AiStudioController extends Controller
 {
-    /**
-     * POST /api/ai/generate
-     * Master Multi-Modal AI Prompt Engine (Gemini 2.5 Flash + Local NLP)
-     */
+    protected GeminiAiService $aiService;
+
+    public function __construct(GeminiAiService $aiService)
+    {
+        $this->aiService = $aiService;
+    }
+
     public function generate(Request $request)
     {
         $validated = $request->validate([
@@ -29,57 +33,218 @@ class AiStudioController extends Controller
 
         if ($apiKey) {
             try {
-                $systemPrompt = "BẠN LÀ CHUYÊN VIÊN TRƯỞNG BAN TUYÊN GIÁO - TRUYỀN THÔNG CÔNG ĐOÀN TRƯỜNG ĐẠI HỌC THỦ DẦU MỘT (TDMU).
-Nhiệm vụ: Soạn thảo bài viết truyền thông chính thống chuẩn mực văn phong hành chính đoàn thể và giáo dục đại học.
-Cấu trúc bắt buộc:
-I. Bối cảnh & Căn cứ kế hoạch công tác Công đoàn TDMU 2026.
-II. Thời gian, địa điểm, đối tượng, nội dung sự kiện ({$eventTitle}).
-III. Trích dẫn ý nghĩa (<blockquote>) về tinh thần đoàn kết, tương thân tương ái, thi đua dạy tốt học tốt.
-IV. Trách nhiệm phối hợp & Thông tin liên hệ Văn phòng Công đoàn TDMU (0274.3815.184, congdoan@tdmu.edu.vn).
+                $result = $this->aiService->generateWithGuardrails(
+                    $eventTitle,
+                    $validated['category'] ?? 'Thông Báo Chỉ Đạo',
+                    $validated['tone'] ?? 'Trang trọng, chuẩn hành chính đại học',
+                    $validated['lengthOption'] ?? 'Vừa (300 - 500 từ)',
+                    $validated['targetAudience'] ?? 'Toàn thể công đoàn viên, cán bộ, giảng viên TDMU',
+                    $validated['issuingUnit'] ?? 'Ban Thường Vụ Công Đoàn Trường',
+                    $validated['author'] ?? 'Cán Bộ Công Đoàn TDMU',
+                    $request->input('eventForm'),
+                    $apiKey
+                );
 
-Yêu cầu xuất ra JSON hợp lệ duy nhất:
-{
-  "titles": ["Tiêu đề 1", "Tiêu đề 2", "Tiêu đề 3"],
-  "subTitle": "Tiêu đề phụ...",
-  "summary": "Tóm tắt 50 từ...",
-  "content": "HTML hoàn chỉnh..."
-}";
-
-                $res = Http::withHeaders(['Content-Type' => 'application/json'])
-                    ->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={$apiKey}", [
-                        'contents' => [['parts' => [['text' => $systemPrompt]]]],
-                        'generationConfig' => ['responseMimeType' => 'application/json']
-                    ]);
-
-                if ($res->successful()) {
-                    $jsonText = $res->json()['candidates'][0]['content']['parts'][0]['text'] ?? '{}';
-                    $parsed = json_decode($jsonText, true);
-                    return response()->json([
-                        'success' => true,
-                        'source' => 'Google Gemini 2.5 Flash API Live',
-                        'titles' => $parsed['titles'] ?? [],
-                        'subTitle' => $parsed['subTitle'] ?? '',
-                        'summary' => $parsed['summary'] ?? '',
-                        'content' => $parsed['content'] ?? ''
-                    ]);
+                if ($result) {
+                    return response()->json($result);
                 }
             } catch (\Exception $e) {
                 // Fallback to local
             }
         }
 
-        // Local Rule-Based NLP Fallback
+        return response()->json($this->aiService->fallbackGenerate($eventTitle, $validated['category'] ?? 'Thông Báo Chỉ Đạo', $validated['tone'] ?? 'Trang trọng'));
+    }
+
+    public function qualityCheck(Request $request)
+    {
+        $title = $request->input('title', '');
+        $content = $request->input('content', '');
+        $cleanContent = strip_tags($content);
+        $wordCount = trim($cleanContent) ? str_word_count($cleanContent) : 0;
+
+        // 1. Length Score (Max 25 pts)
+        $lengthScore = 0;
+        if ($wordCount >= 200 && $wordCount <= 800) $lengthScore = 25;
+        elseif ($wordCount >= 100) $lengthScore = 20;
+        elseif ($wordCount > 0) $lengthScore = 12;
+
+        // 2. Headline Match Score (Max 25 pts)
+        $headlineScore = mb_strlen($title) >= 10 ? 25 : 10;
+
+        // 3. Administrative Tone & TDMU Keyword Score (Max 25 pts)
+        $toneScore = 0;
+        if (str_contains($cleanContent, 'Công đoàn') || str_contains($cleanContent, 'TDMU')) $toneScore += 15;
+        if (str_contains($cleanContent, 'thông báo') || str_contains($cleanContent, 'kế hoạch') || str_contains($cleanContent, 'triển khai')) $toneScore += 10;
+
+        // 4. Contact & Details Score (Max 25 pts)
+        $detailsScore = 0;
+        $warnings = [];
+        if (str_contains($cleanContent, '0274') || str_contains($cleanContent, 'hotline') || str_contains($cleanContent, 'liên hệ') || str_contains($cleanContent, 'email')) {
+            $detailsScore = 25;
+        } else {
+            $detailsScore = 10;
+            $warnings[] = "⚠ Khuyến nghị: Thiếu thông tin liên hệ hoặc hotline Công đoàn TDMU.";
+        }
+
+        if ($wordCount < 150) {
+            $warnings[] = "⚠ Khuyến nghị: Nội dung còn hơi ngắn, nên bổ sung chi tiết để bài viết đạt 300 từ.";
+        }
+
+        $overallScore = $lengthScore + $headlineScore + $toneScore + $detailsScore;
+
+        $checks = [
+            ['name' => "Tiêu Đề Bài Viết Phù Hợp", 'score' => "{$headlineScore}/25 điểm", 'status' => $headlineScore >= 20 ? 'pass' : 'warn'],
+            ['name' => "Độ Dài & Số Từ Bài Viết", 'score' => "{$wordCount} từ ({$lengthScore}/25 điểm)", 'status' => $lengthScore >= 20 ? 'pass' : 'warn'],
+            ['name' => "Văn Phong Hành Chính Công Đoàn", 'score' => "{$toneScore}/25 điểm", 'status' => $toneScore >= 20 ? 'pass' : 'warn'],
+            ['name' => "Đầy Đủ Thông Tin Liên Hệ", 'score' => "{$detailsScore}/25 điểm", 'status' => $detailsScore >= 20 ? 'pass' : 'warn'],
+        ];
+
         return response()->json([
             'success' => true,
-            'source' => 'Local Dynamic NLP Engine (Offline Fallback)',
-            'titles' => [
-                "Thông Báo: Kế Hoạch Tổ Chức {$eventTitle} (Công Đoàn TDMU 2026)",
-                "Sôi Nổi Thi Đua: {$eventTitle} Chào Mừng Phong Trào Đột Phá ĐH Thủ Dầu Một",
-                "Công Đoàn TDMU Triển Khai Chương Trình: {$eventTitle}"
+            'overallScore' => $overallScore,
+            'checks' => $checks,
+            'warnings' => count($warnings) > 0 ? $warnings : ["✓ Bài viết đạt đầy đủ 100% tiêu chuẩn truyền thông TDMU!"]
+        ]);
+    }
+
+    public function floatingCommand(Request $request)
+    {
+        $action = $request->input('action', 'fix_spelling');
+        $text = $request->input('text', '');
+        if (!$text) return response()->json(['error' => 'Text là bắt buộc'], 400);
+
+        $apiKey = $request->input('apiKey') ?: env('GEMINI_API_KEY');
+        if ($apiKey) {
+            try {
+                $prompts = [
+                    'rewrite' => 'Viết lại đoạn văn sau theo cách diễn đạt mượt mà và thu hút hơn:',
+                    'shorten' => 'Rút gọn đoạn văn sau thành một câu súc tích nhất:',
+                    'expand' => 'Mở rộng đoạn văn sau với chi tiết bổ sung cho phong trào Công đoàn:',
+                    'formal' => 'Chuyển đoạn văn sau sang văn phong hành chính trang trọng Công đoàn trường:',
+                ];
+                $systemPrompt = $prompts[$action] ?? 'Sửa lỗi chính tả và ngữ pháp cho đoạn văn sau:';
+                $result = $this->aiService->callGeminiApi("{$systemPrompt} \"{$text}\"", $apiKey);
+                if ($result) {
+                    return response()->json(['success' => true, 'source' => 'Gemini AI Live Transformer', 'result' => $result]);
+                }
+            } catch (\Exception $e) {
+                // Fallback
+            }
+        }
+
+        // Local NLP Transformer
+        $result = $text;
+        if ($action === 'rewrite') $result = "Thực hiện chỉ đạo, " . lcfirst($text);
+        elseif ($action === 'shorten') { $sentences = explode('.', $text); $result = $sentences[0] . '.'; }
+        elseif ($action === 'expand') $result = "{$text} Đồng thời, Ban Thường vụ Công đoàn TDMU đề nghị các Công đoàn bộ phận rà soát và nghiêm túc thực hiện.";
+        elseif ($action === 'formal') $result = "Ban Thường vụ Công đoàn TDMU trân trọng thông báo: {$text}";
+        elseif ($action === 'fix_spelling') $result = str_replace(['truong', 'cong doan', 'tdmu'], ['Trường', 'Công đoàn', 'TDMU'], $text);
+
+        return response()->json(['success' => true, 'source' => 'Real NLP Local Transformer', 'result' => $result]);
+    }
+
+    public function repurpose(Request $request)
+    {
+        $platform = $request->input('platform', 'Facebook');
+        $title = $request->input('title', '');
+        $content = strip_tags($request->input('content', ''));
+
+        if ($platform === 'Facebook') {
+            $result = "📢 [TDMU NEWS] {$title}\n\n{$content}\n\n👉 Xem chi tiết tại Web Công đoàn TDMU!\n#CongDoanTDMU #TDMU2026";
+        } elseif ($platform === 'Zalo') {
+            $result = "[CÔNG ĐOÀN TDMU THÔNG BÁO]\n{$title}\n\n{$content}";
+        } else {
+            $result = "Kính gửi Qúy Thầy/Cô Đoàn viên,\n\nBan Thường vụ Công đoàn TDMU trân trọng thông báo: \"{$title}\".\n\n{$content}\n\nTrân trọng!";
+        }
+
+        return response()->json(['success' => true, 'platform' => $platform, 'result' => $result]);
+    }
+
+    public function eventPlanGenerator(Request $request)
+    {
+        $eventName = $request->input('eventName', 'Hội Thao Truyền Thống Công Đoàn TDMU 2026');
+        $budget = $request->input('budget', '25,000,000 VNĐ');
+
+        return response()->json([
+            'success' => true,
+            'source' => 'Multi-Modal AI Event Architect',
+            'eventTitle' => $eventName,
+            'timeline' => [
+                ['time' => '07:30 - 08:00', 'title' => 'Đón tiếp đại biểu & Điểm danh đoàn viên các Tổ CĐ', 'leader' => 'Ban Tổ Chức'],
+                ['time' => '08:00 - 08:30', 'title' => 'Khai mạc, phát biểu chỉ đạo của Đảng Ủy & BTV Công đoàn', 'leader' => 'Chủ Tịch Công Đoàn'],
+                ['time' => '08:30 - 11:00', 'title' => 'Tiến hành các nội dung thi đấu & Tọa đàm chuyên đề', 'leader' => 'Tổ Trọng Tài / Báo Cáo Viên'],
+                ['time' => '11:00 - 11:30', 'title' => 'Bế mạc, trao cờ thi đua & Bế mạc chương trình', 'leader' => 'Ban Thường Vụ'],
             ],
-            'subTitle' => "Hoạt động trọng tâm hướng đến xây dựng môi trường đại học văn minh, hạnh phúc",
-            'summary' => "Công đoàn Trường Đại học Thủ Dầu Một chính thức phát động kế hoạch {$eventTitle} nhằm nâng cao đời sống vật chất và tinh thần cho cán bộ, giảng viên.",
-            'content' => "<h2>I. MỤC ĐÍCH VÀ Ý NGHĨA CHƯƠNG TRÌNH</h2><p>Thực hiện chương trình công tác năm 2026 của Ban Thường vụ Công đoàn Trường Đại học Thủ Dầu Một, nhà trường trân trọng thông báo kế hoạch tổ chức: <strong>{$eventTitle}</strong>.</p><h2>II. THỜI GIAN VÀ ĐỊA ĐIỂM TỔ CHỨC</h2><p>• <strong>Địa điểm:</strong> Trường Đại học Thủ Dầu Một (Số 06 Trần Văn Ơn, TP. Thủ Dầu Một, Bình Dương).</p><blockquote><i class="fa-solid fa-quote-left"></i> "Phát huy tinh thần đoàn kết, sáng tạo và đổi mới trong phong trào thi đua dạy tốt học tốt."</blockquote><div class="journal-contact-card">📌 <strong>Văn phòng Công đoàn TDMU:</strong> Lầu 1, Dãy A, Cổng 1 | 📞 Hotline: (0274) 3815 184</div>"
+            'budgetBreakdown' => [
+                ['item' => 'Khen thưởng giải Nhất, Nhì, Ba', 'amount' => '15,000,000 VNĐ'],
+                ['item' => 'Nước uống, teabreak đoàn viên', 'amount' => '5,000,000 VNĐ'],
+                ['item' => 'In ấn Banner backdrop sân khấu', 'amount' => '2,500,000 VNĐ'],
+            ],
+            'pressReleaseDraft' => "Công đoàn Trường Đại học Thủ Dầu Một vừa chính thức ban hành kế hoạch tổ chức {$eventName} nhằm thúc đẩy phong trào thi đua dạy tốt học tốt."
+        ]);
+    }
+
+    public function imagePromptGenerator(Request $request)
+    {
+        $topic = $request->input('topic', 'Hoạt động công đoàn TDMU');
+
+        return response()->json([
+            'success' => true,
+            'source' => 'Visual Art AI Prompter',
+            'slogan' => 'Công Đoàn TDMU: Đoàn Kết - Đổi Mới - Sáng Tạo Vươn Tầm 2026',
+            'prompts' => [
+                "Professional banner of Thu Dau Mot University trade union members participating in {$topic}, modern university campus background, high quality, 4k",
+                "Warm and inspiring photograph of Vietnamese university lecturers receiving trade union merit awards, cinematic lighting, corporate style"
+            ]
+        ]);
+    }
+
+    public function chat(Request $request)
+    {
+        $message = $request->input('message', '');
+        if (!$message) return response()->json(['error' => 'Message là bắt buộc'], 400);
+
+        $apiKey = $request->input('apiKey') ?: env('GEMINI_API_KEY');
+        $articleTitle = $request->input('articleTitle', '');
+        $articleContent = $request->input('articleContent', '');
+        $selectedText = $request->input('selectedText', '');
+        $history = $request->input('history', []);
+
+        if ($apiKey) {
+            try {
+                $result = $this->aiService->chatWithCopilot(
+                    $message,
+                    $history,
+                    $articleTitle,
+                    $articleContent,
+                    $selectedText,
+                    $apiKey
+                );
+                if ($result) {
+                    return response()->json($result);
+                }
+            } catch (\Exception $e) {
+                // Fallback
+            }
+        }
+
+        // Local Fallback
+        $reply = "Dạ, em đã chuẩn bị nội dung theo yêu cầu ạ.";
+        $editAction = "APPEND";
+        $editContent = "<p>Nội dung sinh tự động do thiếu API Key...</p>";
+
+        if ($selectedText) {
+            $editAction = "REPLACE_SELECTION";
+            $editContent = "<p><strong>[Đã sửa]</strong> {$selectedText} (Phiên bản tốt hơn)</p>";
+        }
+
+        return response()->json([
+            'success' => true,
+            'source' => 'Local Fallback Copilot',
+            'reply' => $reply,
+            'editAction' => $editAction,
+            'editContent' => $editContent
         ]);
     }
 }

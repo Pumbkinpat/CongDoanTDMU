@@ -1,0 +1,29 @@
+services:
+  app:
+    image: php:8.2-apache
+    container_name: tdmu-congdoan-app
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+    ports:
+      - "8000:80"
+    depends_on:
+      - db
+    environment:
+      - APACHE_DOCUMENT_ROOT=/var/www/html/public
+    command: /bin/sh -c "docker-php-ext-install pdo_mysql mysqli && a2enmod rewrite && sed -ri -e 's!/var/www/html!$${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf && sed -ri -e 's!/var/www/!$${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf && apache2-foreground"
+    # Serve Laravel from public/ so routes like /api/... and static assets work.
+
+  db:
+    image: mysql:8.0
+    container_name: tdmu-congdoan-db
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: tdmu_congdoan
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - dbdata:/var/lib/mysql
+
+volumes:
+  dbdata:

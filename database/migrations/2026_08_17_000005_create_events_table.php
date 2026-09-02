@@ -14,7 +14,8 @@ return new class extends Migration {
             $table->dateTime('end_time')->nullable();
             $table->text('description')->nullable();
             $table->string('banner_image')->nullable();
-            $table->enum('status', ['upcoming', 'ongoing', 'completed'])->default('upcoming');
+            $table->string('status')->default('upcoming');
+            $table->unsignedInteger('attendees_count')->default(0);
             $table->timestamps();
         });
     }

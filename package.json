@@ -1,27 +1,6 @@
 {
   "name": "tdmu-congdoan-web",
   "version": "1.0.0",
-  "description": "Website Truyền Thông Công Đoàn TDMU Tích Hợp AI Hỗ Trợ Tạo Và Đăng Tải Nội Dung",
-  "main": "server/server.js",
-  "scripts": {
-    "start": "node server/server.js",
-    "dev": "node server/server.js"
-  },
-  "keywords": [
-    "tdmu",
-    "cong-doan",
-    "laravel",
-    "ai",
-    "cms",
-    "facebook-api"
-  ],
-  "author": "Nhóm Đồ Án Cơ Sở Ngành TDMU",
-  "license": "ISC",
-  "dependencies": {
-    "@google/genai": "^2.17.1",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "mssql": "^12.7.0"
-  }
+  "private": true,
+  "description": "Website Truyền Thông Công Đoàn TDMU - Laravel + MySQL (cross-platform: macOS, Windows, Linux)"
 }

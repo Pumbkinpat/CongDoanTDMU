@@ -9,9 +9,11 @@ return new class extends Migration {
         Schema::create('comments', function (Blueprint $table) {
             $table->id();
             $table->foreignId('article_id')->constrained('articles')->onDelete('cascade');
+            $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
             $table->string('author_name');
             $table->string('author_email')->nullable();
             $table->text('comment_text');
+            $table->string('platform')->default('website');
             $table->boolean('is_approved')->default(true);
             $table->timestamps();
         });

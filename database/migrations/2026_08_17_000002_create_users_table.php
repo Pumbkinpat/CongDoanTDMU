@@ -10,9 +10,9 @@ return new class extends Migration {
             $table->id();
             $table->string('name');
             $table->string('email')->unique();
-            $table->string('password');
+            $table->string('password')->nullable();
             $table->foreignId('role_id')->constrained('roles')->onDelete('cascade');
-            $table->string('department')->nullable(); // Khoa / Phòng ban
+            $table->string('department')->nullable();
             $table->rememberToken();
             $table->timestamps();
         });
